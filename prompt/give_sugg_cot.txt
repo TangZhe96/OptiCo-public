@@ -1,0 +1,87 @@
+# **Chain of Thought: Performance Tuning Suggestions**
+
+**Step 0: Mandatory Health Diagnosis & Directive**
+Before any analysis, determine the system's health from the current run's metrics.
+* `gpu_util`: GPU utilization (%).
+* `mem_usage`: Peak memory usage (%).
+
+**Health States & Directives:**
+```python
+if gpu_util < 50 and mem_usage < 70:
+    health_state = "SEVERELY_UNDERUTILIZED"
+    PRIMARY_DIRECTIVE = "REDUCE_PARALLELISM"
+    reasoning = "Low GPU and memory utilization indicates gross inefficiency from excessive parallelism overhead."
+elif PP > 1 and MFU < 0.5:
+    health_state = "HIGH_PP_OVERHEAD"
+    PRIMARY_DIRECTIVE = "REDUCE_PIPELINE_DEPTH"
+    reasoning = "High PP value creates significant pipeline bubble overhead, leading to low MFU."
+elif mem_usage > 95:
+    health_state = "MEMORY_BOUND"
+    PRIMARY_DIRECTIVE = "RESOLVE_MEMORY_PRESSURE"
+else:
+    health_state = "PERFORMANCE_TUNE"
+    # No overriding directive; proceed with standard bottleneck analysis.
+```
+
+**Step 1: Understand Key Parameters**
+1. **MICRO_BATCH_SIZE (MBS)**: Increases throughput, may cause OOM.
+2. **TP & PP**: Parallelism strategies. High values increase communication overhead.
+3. **AC (Activation Checkpointing)**: Trades compute for memory. `none` (fast, high memory) → `sel` → `full` → `offload` (slow, low memory).
+4. **OVERLAP_GRAD_REDUCE / OVERLAP_PARAM_GATHER**: Generally enable `true` to hide communication cost, unless `AC=offload`.
+5. **FUSED_CROSS_ENTROPY**: Generally enable `true` for speed.
+
+**Step 2: Enforce Safety Guards (Before Any Suggestion)**
+* **Duplicate Check**: NEVER suggest a parameter set identical to a past run's signature. This check is absolute and non-negotiable.
+* **Failure Check**: NEVER suggest a combination that previously caused OOM or errors.
+* **Constraint Check**: MUST validate (e.g., `GLOBAL_BATCH_SIZE % MBS == 0`, `TP*PP ≤ GPUs`).
+
+**Step 3: Generate The Next Suggestion**
+Follow this algorithm strictly:
+
+**3.1 Obey Health Directive (Highest Priority)**
+If `health_state == "SEVERELY_UNDERUTILIZED"` or `health_state == "HIGH_PP_OVERHEAD"`:
+*   **Process:**
+    1.  **Generate Candidates:** Prioritize reducing PP if PP > 1. Create an ordered list of candidate values (e.g., [PP//2, 1]). If PP reduction is not possible or all candidates fail, generate a similar list for TP reduction.
+    2.  **Evaluate & Check:** For each candidate value in order:
+        *   Construct the complete candidate configuration.
+        *   Perform the **Constraint Check**.
+        *   Perform the **Duplicate Check** against the full history.
+        *   Perform the **Failure Check** against known bad configurations.
+    3.  **Select:** The first candidate that passes all checks is selected as the suggestion.
+    4.  **Fallback:** If all candidates for reducing parallelism result in a duplicate configuration, violate constraints, or match a known failure, proceed directly to **Step 3.3**.
+*   **Reason:** The PRIMARY_DIRECTIVE is `REDUCE_PARALLELISM` or `REDUCE_PIPELINE_DEPTH`.
+*   **Output:** If a suggestion is found, proceed to Step 4.
+
+**3.2 Standard Bottleneck Tuning**
+If `health_state` is `MEMORY_BOUND` or `PERFORMANCE_TUNE`:
+* **Process:**
+    1.  **Diagnose & Generate Candidate List:** Based on the metrics, create a **prioritized list**. For example:
+        *   **If OOM or `mem_usage > 90%`:** Candidates = [("AC", "sel"), ("MBS", `max(1, MBS//2)`)]
+        *   **If `gpu_util > 80%` and memory headroom exists:** Candidates = [("MBS", next higher safe divisor)]
+        *   **If overlaps are disabled and `AC != 'offload'`:** Candidates = [("OVERLAP_GRAD_REDUCE", True), ("OVERLAP_PARAM_GATHER", True)]
+        *   **If FUSED_CROSS_ENTROPY is disabled:** Candidates = [("FUSED_CROSS_ENTROPY", True)]
+    2.  **Evaluate & Check in Order:** For each `(parameter, new_value)` in the prioritized list:
+        *   Construct the complete candidate configuration.
+        *   Perform the **Constraint Check**, **Duplicate Check**, and **Failure Check**.
+    3.  **Select:** The first candidate that passes all checks is selected.
+    4.  **Fallback:** If all candidates result in a duplicate, violate constraints, or match a known failure, proceed to **Step 3.3**.
+
+**3.3 Exploratory Tuning (Fallback)**
+*   **Trigger:** This step is invoked **only if** all targeted changes in Step 3.1 or Step 3.2 failed because they would produce a duplicate, unsafe, or invalid configuration.
+*   **Purpose:** To suggest a minimal, safe change to a less-utilized parameter, ensuring progress without repetition.
+*   **Process:** Generate a list of candidate changes targeting parameters not primarily tuned for performance (e.g., toggling `FUSED_CROSS_ENTROPY`, adjusting `AC_LAYERS`, setting `FIRST_PP_NUM_LAYERS` or `LAST_PP_NUM_LAYERS` to a small integer like 4). Evaluate each candidate with the same strict **Constraint, Duplicate, and Failure Checks**. The first valid candidate is selected. If none are found, output an error stating that all plausible configurations have been tried.
+
+**Step 4: Finalize & Format Output**
+1.  **Final Verification:** Confirm the selected suggestion has passed all **Step 2 Safety Guards** during the evaluation in Step 3.
+2.  **Output Reasoning:** Place the complete reasoning chain (health diagnosis, candidate generation, check results, final selection logic) inside `<think>` tags.
+3.  **Output Suggestion:** After `</think>`, present the clear suggestion (e.g., "Set PP=4") or the error message from Step 3.3.
+
+---
+
+## **RULES SUMMARY**
+
+1.  **Health Directive is Absolute:** A `SEVERELY_UNDERUTILIZED` or `HIGH_PP_OVERHEAD` diagnosis must first attempt to **reduce parallelism**.
+2.  **Zero-Tolerance on Historical Repetition:** A suggested configuration **must be verified as novel** against the entire historical record. This is enforced by the structured evaluation loop in Step 3.
+3.  **Safety First:** Never suggest configurations known to cause failures or violate constraints.
+4.  **Guaranteed Progress:** If standard tuning leads to duplicates or failures, the system **must** attempt exploratory changes (Step 3.3) to propose a new, valid configuration.
+5.  **Think First:** Always output reasoning within `<think>` tags before the final answer.

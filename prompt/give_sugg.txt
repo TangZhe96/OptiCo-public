@@ -1,0 +1,21 @@
+Analyze the model's training performance data below. Propose parameter adjustments that BOTH maximize performance AND avoid configurations known to cause failures. To evaluate a parameter's effect, you'd better control other variables to isolate its influence.
+
+Run Configuration:
+
+{FIXED_PARA}
+
+Performance Data:
+
+{TABLE}
+
+IMPORTANT: Last row shows current parameters.  
+
+Current Configuration:
+{PARAMETERS}
+
+Requirements:
+1. Strictly use this format of output: "Change {PARAMETER} from {CURRENT_VALUE} to {PROPOSED_VALUE}. "
+2. Sort suggestions by expected improvement (from high to low).
+3. Prohibit suggestions matching any failure-causing parameter combinations in the performance table. 
+4. Must don't duplicate parameter sets from historical configurations. 
+5. If uncertain about a parameter's impact on performance, leave it unchanged.

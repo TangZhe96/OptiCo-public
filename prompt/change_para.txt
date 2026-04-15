@@ -1,0 +1,26 @@
+Please update the configuration according to these guidelines:
+
+Current Configuration:
+{PARAMETERS}
+
+
+Modification Suggestions:
+{SUGGESTIONS}
+
+
+Modification Rules:
+1. Must keep same parameter names/count/format. 
+2. You can only modify these parameters: {PARAMETER_NAME}
+3. Return both changed and unchanged parameters. 
+4. Must not replicate any complete parameter set in the table. 
+
+
+Reference Table:
+
+{TABLE}
+
+
+Example Response:
+MICRO_BATCH_SIZE:4
+AC:sel
+PP:1

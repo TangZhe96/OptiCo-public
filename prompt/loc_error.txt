@@ -1,0 +1,34 @@
+Analyze this fault to determine if it is caused by improper parameter settings. It is necessary to analyze the underlying causes, especially timeout failures.
+
+Logs: 
+{LOG}  
+
+Parameters: 
+{PARAMETERS}  
+
+Output rules:
+1. [ERROR_SUMMARY]
+2. Confidence: [0-100]
+3. If Confidence ≤50: "[ERROR_SUMMARY]. Potential underlying issue (Confidence: X)"
+4. If Confidence >50:
+    * Parameter-related: "[PARAM(S)] [VALUE(S)] caused [ERROR_SUMMARY] (Confidence: X)"
+    * Unrelated: "[ERROR_SUMMARY]. No parameter issue. RETRY (Confidence: X)"
+5. For timeout errors, MUST check for:
+   - Deadlocks/race conditions
+   - Resource starvation (CPU/GPU/Memory)
+   - Network bottlenecks
+   - Dependency failures
+6. Show exact confidence score
+7. No explanations, pure diagnosis
+8. Strict 30-word limit
+
+Critical Notes:
+- Prioritize the first error to occur
+- Timeouts may be symptoms, not root causes
+- Low confidence indicates need for deeper investigation
+- Always suggest most probable root cause
+
+Example Output:
+1. "TypeError. Unknown error (Confidence: 10)"
+2. "TP 2 and PP 2 caused Assertion error in parameter management (Confidence: 75)"
+3. "Process hang. No parameter issue. RETRY (Confidence: 80)"
