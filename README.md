@@ -1,5 +1,8 @@
 <!-- markdownlint-disable MD041 -->
 
+南湖调度系统用户可参考：https://github.com/TangZhe96/OptiCo
+
+
 <div align="center">
   <h1><a href="#"><img alt="OptiCo" src="images/robot.svg" width=200/></a></h1>
   <h3>Adaptive Distributed Training Optimization via Collaborative Agent Reasoning</h3>
