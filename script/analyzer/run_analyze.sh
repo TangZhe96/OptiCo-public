@@ -3,20 +3,24 @@ set +e
 
 RUN_TYPE=${1:-auto} # auto / give_sugg / change_para / loc_error / answer_quest
 
-# export CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7
-
+ANALYZER_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+SCRIPT_DIR=$(cd "${ANALYZER_DIR}/.." && pwd)
+export OPTICO_ROOT_PATH=${OPTICO_ROOT_PATH:-$(cd "${SCRIPT_DIR}/.." && pwd)}
 
 MODEL_TYPE=${MODEL_TYPE:-"qwen2.5"}
 MODEL_SIZE=${MODEL_SIZE:-"0.5B"}
 
-PROMPT_HOME_PATH=/workspace/code/OptiCo/prompt
-OUTPUT_PATH=${OUTPUT_PATH:-"/workspace/code/OptiCo/output_${MODEL_TYPE}_${MODEL_SIZE}"}
+PROMPT_HOME_PATH=${PROMPT_HOME_PATH:-"${OPTICO_ROOT_PATH}/prompt"}
+OUTPUT_PATH=${OUTPUT_PATH:-"${OPTICO_ROOT_PATH}/output_${MODEL_TYPE}_${MODEL_SIZE}"}
 REPORT_FILE=${REPORT_FILE:-"${OUTPUT_PATH}/report.csv"}
 PARA_FILE=${PARA_FILE:-"${OUTPUT_PATH}/parameters.txt"}
 FIXED_PARA_FILE=${FIXED_PARA_FILE:-"${OUTPUT_PATH}/fixed_parameters.txt"}
 MONITOR_RESULT_FILE=${MONITOR_RESULT_FILE:-"${OUTPUT_PATH}/monitor_result.txt"}
 ERROR_LOG_FILE=${ERROR_LOG_FILE:-"${OUTPUT_PATH}/monitor_error.txt"}
 MODEL_PATH=${MODEL_PATH:-"/workspace/model/DeepSeek-R1-Distill-Qwen-14B"}
+
+export KEY=${KEY:-${API_KEY:-}}
+export API_KEY=${API_KEY:-${KEY:-}}
 
 iter_cur=1
 if [ -e ${REPORT_FILE} ]; then
@@ -77,6 +81,8 @@ common_args="
 
 echo "[${iter_cur}] ---------------------------- run ${RUN_TYPE} start ----------------------------"
 
-python /workspace/code/OptiCo/script/analyzer/analyzer.py ${add_args} ${common_args}
+python "${ANALYZER_DIR}/analyzer.py" ${add_args} ${common_args}
 
+_analyze_rc=$?
 echo "[${iter_cur}] ============================ run ${RUN_TYPE} finish ============================"
+exit ${_analyze_rc}

@@ -10,17 +10,71 @@ from openai import OpenAI
 import logging
 import shutil
 
-KEY = os.getenv("KEY")
+from param_check import apply_canonical, format_parameters, validate_proposal
+
+KEY = os.getenv("API_KEY") or os.getenv("KEY")
 BASE_URL = os.getenv("BASE_URL")
+INFER_MODEL = os.getenv("INFER_MODEL") or "gpt-5.2"
 
 
 logger = None # info / error / debug
 iter_cur = os.getenv("ITER_CUR")
 if iter_cur is None:
     iter_cur = '1'
+stats = None  # global LLMStats
+
+
+class LLMStats:
+    """Track LLM call count and token consumption (writes llm_stats.csv)."""
+
+    def __init__(self, output_path):
+        self.output_path = output_path
+        self.stats_csv = os.path.join(output_path, 'llm_stats.csv')
+        self.round = 1
+        self.call_count = 0
+        self.total_prompt_tokens = 0
+        self.total_completion_tokens = 0
+        self.total_tokens = 0
+
+    def record_call(self, iter_cur, run_type, prompt_tokens, completion_tokens, total_tokens):
+        header = 'Iter,Round,CallCount,RunType,PromptTokens,CompletionTokens,TotalTokens\n'
+        if not os.path.exists(self.stats_csv):
+            with open(self.stats_csv, 'w', encoding='utf-8') as f:
+                f.write(header)
+        else:
+            with open(self.stats_csv, 'r', encoding='utf-8') as f:
+                first_line = f.readline().strip()
+                expected = header.strip()
+                if first_line != expected:
+                    f.seek(0)
+                    content = f.read()
+                    with open(self.stats_csv, 'w', encoding='utf-8') as fw:
+                        fw.write(header)
+                        if content.strip():
+                            fw.write(content)
+
+        self.call_count += 1
+        self.total_prompt_tokens += int(prompt_tokens or 0)
+        self.total_completion_tokens += int(completion_tokens or 0)
+        self.total_tokens += int(total_tokens or 0)
+        with open(self.stats_csv, 'a', encoding='utf-8') as f:
+            f.write(
+                f'{iter_cur},{self.round},{self.call_count},{run_type},'
+                f'{int(prompt_tokens or 0)},{int(completion_tokens or 0)},{int(total_tokens or 0)}\n'
+            )
+
+    def get_summary(self):
+        return {
+            'round': self.round,
+            'total_calls': self.call_count,
+            'total_prompt_tokens': self.total_prompt_tokens,
+            'total_completion_tokens': self.total_completion_tokens,
+            'total_tokens': self.total_tokens,
+        }
+
 
 def set_log(args):
-    global logger, iter_cur
+    global logger, iter_cur, stats
     
     DATE_TYPE = '%Y.%m.%d-%H.%M.%S'
     time_cur = time.strftime(DATE_TYPE, time.localtime())
@@ -45,6 +99,9 @@ def set_log(args):
     file_handler.setLevel(logging.INFO)
     file_handler.setFormatter(logging.Formatter('[%(asctime)s-%(levelname)s] %(message)s', DATE_TYPE))
     logger.addHandler(file_handler)
+
+    if stats is None:
+        stats = LLMStats(args.output_path)
 
 
 def get_args():
@@ -267,6 +324,7 @@ class MergeInput:
 
         self.prompt_answer_quest = args.prompt_answer_quest
         self.time_consuming_table = args.time_consuming_table
+        self.validation_feedback = getattr(args, "validation_feedback", "") or ""
         
         
         if run_type == 'give_sugg':
@@ -296,6 +354,13 @@ class MergeInput:
         input_text = input_text.replace('{FIXED_PARA}', fixed_parameters)
         input_text = input_text.replace('{TABLE}', report_table)
         input_text = input_text.replace('{PARAMETERS}', parameters)
+        if self.validation_feedback:
+            input_text += (
+                "\n\nRejected proposals from hard checks. "
+                "Do not repeat a rejected launched configuration, "
+                "and fix any constraint violation:\n"
+                + self.validation_feedback
+            )
 
         return input_text
 
@@ -380,7 +445,7 @@ def run_vllm(args, run_type):
     return response
 
 def api_infer(args, run_type, max_retries=10, wait_time=10):
-    global logger
+    global logger, stats, iter_cur
 
     input_prompt = prepare_input_message(args, run_type)
     logger.info(f'input_prompt is: \n{input_prompt}')
@@ -391,14 +456,31 @@ def api_infer(args, run_type, max_retries=10, wait_time=10):
     )
     for retry_count in range(max_retries + 1):
         try:
+            # DeepSeek counts reasoning against max_tokens and returns empty
+            # content once that budget is spent. Always disable thinking.
             response = client.chat.completions.create(
-                model="gpt-5.2",
+                model=INFER_MODEL,
                 messages=[
                     {"role": "user", "content": input_prompt}
                 ],
                 temperature=0.7,
-                max_tokens=8192
+                max_tokens=8192,
+                extra_body={"thinking": {"type": "disabled"}},
             )
+            usage = getattr(response, 'usage', None)
+            prompt_tokens = int(getattr(usage, 'prompt_tokens', 0) or 0) if usage else 0
+            completion_tokens = int(getattr(usage, 'completion_tokens', 0) or 0) if usage else 0
+            total_tokens = int(getattr(usage, 'total_tokens', 0) or 0) if usage else 0
+            if total_tokens <= 0:
+                total_tokens = prompt_tokens + completion_tokens
+            if stats is not None:
+                stats.record_call(iter_cur, run_type, prompt_tokens, completion_tokens, total_tokens)
+                summary = stats.get_summary()
+                logger.info(
+                    f'[{run_type}] usage: input={prompt_tokens}, output={completion_tokens}, '
+                    f'total={total_tokens}; accumulated: input={summary["total_prompt_tokens"]}, '
+                    f'output={summary["total_completion_tokens"]}, total={summary["total_tokens"]}'
+                )
             return response.choices[0].message.content
         except:
             logger.warning(f"Retry [{retry_count+1}]... waiting {wait_time} sec...")
@@ -483,12 +565,69 @@ def run_analyzer(args, run_type):
         logger.info(f'------------- answer is: ------------- \n{answer}')
 
 
+def _format_rejects(rejects):
+    lines = []
+    for index, result in enumerate(rejects, start=1):
+        lines.append(f"{index}. {result['validation_result']}: {result['reason']}")
+        lines.append(format_parameters(result["parameters"]))
+    return "\n".join(lines)
+
+
+def run_validated_auto(args):
+    """give_sugg → change_para, then reject duplicates and illegal configs.
+
+    The model is asked again with the rejection. After MAX_VALIDATION_ROUNDS
+    failures the previous parameters are restored and the process exits
+    non-zero so the search loop does not train the same configuration again.
+    """
+    global logger
+    max_rounds = int(os.environ.get("MAX_VALIDATION_ROUNDS", "4") or "4")
+    if max_rounds < 1:
+        max_rounds = 1
+    baseline = read_txt_to_dict(args.para_file)
+    model = os.environ.get("MODEL_TYPE") or os.environ.get("MODEL") or ""
+    rejects = []
+    for round_idx in range(1, max_rounds + 1):
+        write_dict_to_txt(baseline, args.para_file)
+        args.validation_feedback = _format_rejects(rejects)
+        run_analyzer(args, "give_sugg")
+        run_analyzer(args, "change_para")
+        proposed = read_txt_to_dict(args.para_file)
+        result = validate_proposal(
+            proposed,
+            report_path=args.report_table,
+            fixed_path=args.fixed_para_file,
+            model=model,
+        )
+        logger.info(
+            "validation round %s/%s: %s (%s)",
+            round_idx,
+            max_rounds,
+            result["validation_result"],
+            result["reason"],
+        )
+        if result["validation_result"] == "VALID":
+            merged = apply_canonical(proposed, result["canonical"])
+            write_dict_to_txt(merged, args.para_file)
+            logger.info("accepted parameters:\n%s", format_parameters(merged))
+            return 0
+        rejects.append(result)
+        logger.warning(
+            "rejected proposal:\n%s", format_parameters(result["parameters"])
+        )
+    write_dict_to_txt(baseline, args.para_file)
+    logger.error(
+        "validation exhausted after %s rounds; restored previous parameters and stopped",
+        max_rounds,
+    )
+    return 2
+
+
 if __name__ == "__main__":
     args = get_args()
     run_type = args.run_type
     if run_type == 'auto':
-        run_analyzer(args, 'give_sugg')
-        run_analyzer(args, 'change_para')
+        raise SystemExit(run_validated_auto(args))
     else:
         run_analyzer(args, run_type)
     

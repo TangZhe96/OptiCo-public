@@ -14,7 +14,7 @@ export TORCH_DISTRIBUTED_TIMEOUT=600 # s
 export NCCL_CONNECT_TIMEOUT=600000 # ms
 export NCCL_IB_TIMEOUT=60 
 export NCCL_IB_RETRY_CNT=20 
-export NCCL_SOCKET_IFNAME=ens17f0np0
+export NCCL_SOCKET_IFNAME=${NCCL_SOCKET_IFNAME:-ens17f0np0}
 export NCCL_IB_DISABLE=1
 export NCCL_BLOCKING_WAIT=1
 
@@ -25,8 +25,8 @@ export NCCL_SOCKET_TIMEOUT=600000 # ms
 export NCCL_SOCKET_NTHREADS=4
 export NCCL_NSOCKS_PERTHREAD=8
 
-OUTPUT_BASEPATH=/workspace/code/OptiCo/output/mcore
-PAI_MEGATRON_PATH=/workspace/code/OptiCo/Pai-Megatron-Patch-v0-12-3
+OUTPUT_BASEPATH=${OUTPUT_BASEPATH:-/workspace/code/OptiCo/output/mcore}
+PAI_MEGATRON_PATH=${PAI_MEGATRON_PATH:-/workspace/code/OptiCo/Pai-Megatron-Patch-v0-12-3}
 MEGATRON_PATH=${PAI_MEGATRON_PATH}/backends/megatron/Megatron-LM-core_v0.15.0
 export PYTHONPATH=${PAI_MEGATRON_PATH}:${MEGATRON_PATH}:$PYTHONPATH
 
@@ -110,9 +110,9 @@ SP=true
 DO=true
 FL=true
 TE=true
-DATASET_PATH=/workspace/dataset/qwen3_datasets/mmap_qwen3_datasets_text_document
+DATASET_PATH=${DATASET_PATH:-/workspace/dataset/qwen3_datasets/mmap_qwen3_datasets_text_document}
 VALID_DATASET_PATH=None
-PRETRAIN_CHECKPOINT_PATH=/workspace/model/Qwen3-mini-moe
+PRETRAIN_CHECKPOINT_PATH=${PRETRAIN_CHECKPOINT_PATH:-/workspace/model/Qwen3-mini-moe}
 TRAIN_ITERS=5
 LR_WARMUP_ITERS=0
 LR_DECAY_ITERS=${TRAIN_ITERS}
@@ -369,7 +369,7 @@ megatron_option="  \
         --te-rng-tracker \
         --rotary-base 1000000 \
         --load $PRETRAIN_CHECKPOINT_PATH \
-        --ckpt-format torch \
+        --ckpt-format torch_dist \
         --disable-gloo-process-groups \
         "
 

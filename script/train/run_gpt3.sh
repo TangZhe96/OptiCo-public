@@ -11,8 +11,8 @@ export NCCL_BLOCKING_WAIT=0
 export NCCL_TIMEOUT=60000
 export TORCH_DISTRIBUTED_TIMEOUT=60
 
-OUTPUT_BASEPATH=/workspace/code/OptiCo/output/mcore
-PAI_MEGATRON_PATH=/workspace/code/OptiCo/Pai-Megatron-Patch-v0-12-3
+OUTPUT_BASEPATH=${OUTPUT_BASEPATH:-/workspace/code/OptiCo/output/mcore}
+PAI_MEGATRON_PATH=${PAI_MEGATRON_PATH:-/workspace/code/OptiCo/Pai-Megatron-Patch-v0-12-3}
 
 MCORE_VERSION=${MCORE_VERSION:-"0.15.0"} # 0.15.0 / 0.14.0 / 0.13.0 / 0.12.0 / 0.6.0 
 if [ ${MCORE_VERSION} = "0.15.0" ]; then
@@ -123,8 +123,8 @@ EXTRA_VOCAB_SIZE=0
 
 TE=true
 SAVE_INTERVAL=500
-DATASET_PATH=/workspace/dataset/llama2_wudao/wudao_llamabpe_text_document
-PRETRAIN_CHECKPOINT_PATH=/workspace/model/gpt-3
+DATASET_PATH=${DATASET_PATH:-/workspace/dataset/llama2_wudao/wudao_llamabpe_text_document}
+PRETRAIN_CHECKPOINT_PATH=${PRETRAIN_CHECKPOINT_PATH:-/workspace/model/gpt-3}
 TRAIN_ITERS=5
 LR_WARMUP_ITERS=0
 LR_DECAY_ITERS=${TRAIN_ITERS}

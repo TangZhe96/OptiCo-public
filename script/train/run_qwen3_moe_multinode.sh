@@ -1,32 +1,35 @@
 #!/bin/bash
 # set -eo pipefail
+ulimit -Hl unlimited
+ulimit -Sl unlimited
 
 export PYTHONWARNINGS="ignore::FutureWarning,ignore::UserWarning,ignore::RuntimeWarning,ignore::ResourceWarning,ignore::DeprecationWarning"
-export NCCL_DEBUG="ERROR"
+export NCCL_DEBUG=${NCCL_DEBUG:-ERROR}
 export TORCH_CPP_LOG_LEVEL="ERROR"
 
 export NCCL_ASYNC_ERROR_HANDLING=1
 export TORCH_NCCL_ASYNC_ERROR_HANDLING=1
 # export NCCL_BLOCKING_WAIT=0
-export NCCL_TIMEOUT=600000 # ms
-export TORCH_DISTRIBUTED_TIMEOUT=600 # s
+export NCCL_TIMEOUT=300000 # ms
+export TORCH_DISTRIBUTED_TIMEOUT=300 # s
 
-export NCCL_CONNECT_TIMEOUT=600000 # ms
+export NCCL_CONNECT_TIMEOUT=300000 # ms
 export NCCL_IB_TIMEOUT=60 
 export NCCL_IB_RETRY_CNT=20 
-export NCCL_SOCKET_IFNAME=ens17f0np0
-export NCCL_IB_DISABLE=1
+export NCCL_SOCKET_IFNAME=${NCCL_SOCKET_IFNAME:-ens17f0np0}
+export NCCL_IB_DISABLE=0
+export NCCL_NET_GDR_LEVEL=5
 export NCCL_BLOCKING_WAIT=1
 
 export NCCL_IB_GID_INDEX=3 
-export NCCL_IB_HCA=mlx5_0 
+export NCCL_IB_HCA=${NCCL_IB_HCA:-mlx5_cx6_0,1,2,3} 
 
-export NCCL_SOCKET_TIMEOUT=600000 # ms
+export NCCL_SOCKET_TIMEOUT=300000 # ms
 export NCCL_SOCKET_NTHREADS=4
 export NCCL_NSOCKS_PERTHREAD=8
 
-OUTPUT_BASEPATH=/workspace/code/OptiCo/output/mcore
-PAI_MEGATRON_PATH=/workspace/code/OptiCo/Pai-Megatron-Patch-v0-12-3
+OUTPUT_BASEPATH=${OUTPUT_BASEPATH:-/workspace/code/OptiCo/output/mcore}
+PAI_MEGATRON_PATH=${PAI_MEGATRON_PATH:-/workspace/code/OptiCo/Pai-Megatron-Patch-v0-12-3}
 MEGATRON_PATH=${PAI_MEGATRON_PATH}/backends/megatron/Megatron-LM-core_v0.15.0
 export PYTHONPATH=${PAI_MEGATRON_PATH}:${MEGATRON_PATH}:$PYTHONPATH
 
@@ -47,7 +50,7 @@ elif [ $ENV = dlc ]; then
     GPUS_PER_NODE=${KUBERNETES_CONTAINER_RESOURCE_GPU}
 fi
 
-DISTRIBUTED_ARGS="--nproc_per_node $GPUS_PER_NODE --nnodes $NNODES --node_rank $NODE_RANK --master_addr $MASTER_ADDR --master_port $MASTER_PORT"
+DISTRIBUTED_ARGS="--nproc_per_node $GPUS_PER_NODE --nnodes $NNODES --node_rank $NODE_RANK --master_addr $MASTER_ADDR --master_port $MASTER_PORT --rdzv_conf=timeout=90"
 
 MODEL_TYPE="qwen3-moe"
 MODEL_SIZE=${MODEL_SIZE:-A0.6B} # 6B
@@ -110,10 +113,10 @@ SP=true
 DO=true
 FL=true
 TE=true
-DATASET_PATH=/workspace/dataset/qwen3_datasets/mmap_qwen3_datasets_text_document
+DATASET_PATH=${DATASET_PATH:-/workspace/dataset/qwen3_datasets/mmap_qwen3_datasets_text_document}
 VALID_DATASET_PATH=None
-PRETRAIN_CHECKPOINT_PATH=/workspace/model/Qwen3-mini-moe
-TRAIN_ITERS=5
+PRETRAIN_CHECKPOINT_PATH=${PRETRAIN_CHECKPOINT_PATH:-/workspace/model/Qwen3-mini-moe}
+TRAIN_ITERS=3
 LR_WARMUP_ITERS=0
 LR_DECAY_ITERS=${TRAIN_ITERS}
 
@@ -369,6 +372,7 @@ megatron_option="  \
         --te-rng-tracker \
         --rotary-base 1000000 \
         --load $PRETRAIN_CHECKPOINT_PATH \
+        --ckpt-format torch_dist \
         --disable-gloo-process-groups \
         "
 
@@ -424,5 +428,6 @@ if [ "$PP" -gt 1 ] && ([ "$FIRST_PP_NUM_LAYERS" != "none" ] || [ "$LAST_PP_NUM_L
 fi
 
 eval ${run_cmd} 2>&1 | stdbuf -o0 grep -v -E "Warning:|FutureWarning|UserWarning|RuntimeWarning|ResourceWarning|DeprecationWarning" | tee -a ${LOG_FILE}
-
+train_rc=${PIPESTATUS[0]}
 set +x
+exit ${train_rc}

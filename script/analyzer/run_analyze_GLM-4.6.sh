@@ -79,4 +79,6 @@ echo "[${iter_cur}] ---------------------------- run ${RUN_TYPE} start ---------
 
 python /workspace/code/OptiCo/script/analyzer/analyzer_GLM-4.6.py ${add_args} ${common_args}
 
+_analyze_rc=$?
 echo "[${iter_cur}] ============================ run ${RUN_TYPE} finish ============================"
+exit ${_analyze_rc}

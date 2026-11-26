@@ -21,6 +21,7 @@ Output rules:
 6. Show exact confidence score
 7. No explanations, pure diagnosis
 8. Strict 30-word limit
+9. TE stack / env mismatch (e.g. missing TE attrs, init failures in TE modules) - often an incompatible tunable; diagnose which param yourself from the stack
 
 Critical Notes:
 - Prioritize the first error to occur

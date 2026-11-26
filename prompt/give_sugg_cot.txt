@@ -25,15 +25,22 @@ else:
 
 **Step 1: Understand Key Parameters**
 1. **MICRO_BATCH_SIZE (MBS)**: Increases throughput, may cause OOM.
-2. **TP & PP**: Parallelism strategies. High values increase communication overhead.
-3. **AC (Activation Checkpointing)**: Trades compute for memory. `none` (fast, high memory) → `sel` → `full` → `offload` (slow, low memory).
-4. **OVERLAP_GRAD_REDUCE / OVERLAP_PARAM_GATHER**: Generally enable `true` to hide communication cost, unless `AC=offload`.
-5. **FUSED_CROSS_ENTROPY**: Generally enable `true` for speed.
+2. **TP / PP / CP / EP**: Parallelism. High values increase communication overhead. EP only for MoE. Constraint: `TP*PP*CP*(EP if MoE else 1)` must divide total GPUs.
+3. **SP**: Sequence parallel; only meaningful when `TP>1`. Prefer `true` with TP>1.
+4. **DO**: Distributed optimizer; usually keep `true`.
+5. **AC (Activation Checkpointing)**: Trades compute for memory. `none` (fast, high memory) → `sel` → `full` → `offload` (slow, low memory).
+6. **AC_METHOD**: Only for `AC=full`. Must be `uniform` or `block` (never `none`). Use `none` only when `AC!=full`.
+7. **AC_LAYERS**: Recompute layer stride for `AC=full` / `offload`.
+8. **AC_MODULES**: Selective recompute modules when `AC=sel` (e.g. `core_attn`); use `none` otherwise.
+9. **OVERLAP_GRAD_REDUCE / OVERLAP_PARAM_GATHER**: Generally enable `true` to hide communication cost, unless `AC=offload`.
+10. **TP_COMM_OVERLAP**: Only meaningful when `TP>1`; usually enable with large TP.
+11. **FUSED_CROSS_ENTROPY**: Generally enable `true` for speed.
+12. **FIRST_PP_NUM_LAYERS / LAST_PP_NUM_LAYERS**: Uneven PP split; use `None` when `PP=1`.
 
 **Step 2: Enforce Safety Guards (Before Any Suggestion)**
 * **Duplicate Check**: NEVER suggest a parameter set identical to a past run's signature. This check is absolute and non-negotiable.
 * **Failure Check**: NEVER suggest a combination that previously caused OOM or errors.
-* **Constraint Check**: MUST validate (e.g., `GLOBAL_BATCH_SIZE % MBS == 0`, `TP*PP ≤ GPUs`).
+* **Constraint Check**: MUST validate (e.g., `GLOBAL_BATCH_SIZE % MBS == 0`, `TP*PP*CP*EP ≤ GPUs` and divides world size, `SP=true` only if `TP>1`, `TP_COMM_OVERLAP=true` only if `TP>1`).
 
 **Step 3: Generate The Next Suggestion**
 Follow this algorithm strictly:
@@ -56,10 +63,14 @@ If `health_state == "SEVERELY_UNDERUTILIZED"` or `health_state == "HIGH_PP_OVERH
 If `health_state` is `MEMORY_BOUND` or `PERFORMANCE_TUNE`:
 * **Process:**
     1.  **Diagnose & Generate Candidate List:** Based on the metrics, create a **prioritized list**. For example:
-        *   **If OOM or `mem_usage > 90%`:** Candidates = [("AC", "sel"), ("MBS", `max(1, MBS//2)`)]
-        *   **If `gpu_util > 80%` and memory headroom exists:** Candidates = [("MBS", next higher safe divisor)]
+        *   **If OOM or `mem_usage > 90%`:** Candidates = [("AC", "sel"), ("MBS", `max(1, MBS//2)`), ("DO", True)]. If the OOM was itself `AC=sel` or `AC=none`, do not go back to a heavier AC; retry that same AC at `MBS = max(1, MBS//2)`.
+        *   **If `AC` is `full` or `sel` and `mem_usage` < 85:** Recompute is using extra compute while memory is free. `none` is faster than `sel`, and `sel` is faster than `full`. Candidates = one step lighter (`full`→`sel`, `sel`→`none`), every other parameter unchanged. If that lighter set already OOMed at this MBS, the candidate is the same lighter AC with `MBS = max(1, MBS//2)`.
+        *   **If `gpu_util > 80%`, memory headroom exists, and `AC` is already `none`:** Candidates = [("MBS", next higher safe divisor)]
         *   **If overlaps are disabled and `AC != 'offload'`:** Candidates = [("OVERLAP_GRAD_REDUCE", True), ("OVERLAP_PARAM_GATHER", True)]
+        *   **If `TP>1` and SP/TP_COMM_OVERLAP disabled:** Candidates = [("SP", True), ("TP_COMM_OVERLAP", True)]
         *   **If FUSED_CROSS_ENTROPY is disabled:** Candidates = [("FUSED_CROSS_ENTROPY", True)]
+        *   **If `AC=full` and AC_METHOD is none:** Candidates = [("AC_METHOD", "uniform")]
+        *   **If `AC=sel` and AC_MODULES is none:** Candidates = [("AC_MODULES", "core_attn")]
     2.  **Evaluate & Check in Order:** For each `(parameter, new_value)` in the prioritized list:
         *   Construct the complete candidate configuration.
         *   Perform the **Constraint Check**, **Duplicate Check**, and **Failure Check**.
@@ -69,7 +80,7 @@ If `health_state` is `MEMORY_BOUND` or `PERFORMANCE_TUNE`:
 **3.3 Exploratory Tuning (Fallback)**
 *   **Trigger:** This step is invoked **only if** all targeted changes in Step 3.1 or Step 3.2 failed because they would produce a duplicate, unsafe, or invalid configuration.
 *   **Purpose:** To suggest a minimal, safe change to a less-utilized parameter, ensuring progress without repetition.
-*   **Process:** Generate a list of candidate changes targeting parameters not primarily tuned for performance (e.g., toggling `FUSED_CROSS_ENTROPY`, adjusting `AC_LAYERS`, setting `FIRST_PP_NUM_LAYERS` or `LAST_PP_NUM_LAYERS` to a small integer like 4). Evaluate each candidate with the same strict **Constraint, Duplicate, and Failure Checks**. The first valid candidate is selected. If none are found, output an error stating that all plausible configurations have been tried.
+*   **Process:** Generate a list of candidate changes targeting parameters not primarily tuned for performance (e.g., toggling `FUSED_CROSS_ENTROPY` / `DO` / `TP_COMM_OVERLAP`, adjusting `AC_LAYERS` / `AC_METHOD` / `AC_MODULES` / `CP`, setting `FIRST_PP_NUM_LAYERS` or `LAST_PP_NUM_LAYERS` to a small integer like 4). Evaluate each candidate with the same strict **Constraint, Duplicate, and Failure Checks**. The first valid candidate is selected. If none are found, output an error stating that all plausible configurations have been tried.
 
 **Step 4: Finalize & Format Output**
 1.  **Final Verification:** Confirm the selected suggestion has passed all **Step 2 Safety Guards** during the evaluation in Step 3.

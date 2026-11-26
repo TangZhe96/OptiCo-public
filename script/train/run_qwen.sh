@@ -11,8 +11,8 @@ export NCCL_BLOCKING_WAIT=0
 export NCCL_TIMEOUT=60000
 export TORCH_DISTRIBUTED_TIMEOUT=60
 
-OUTPUT_BASEPATH=/workspace/code/OptiCo/output/mcore
-PAI_MEGATRON_PATH=/workspace/code/OptiCo/Pai-Megatron-Patch-v0-12-3
+OUTPUT_BASEPATH=${OUTPUT_BASEPATH:-/workspace/code/OptiCo/output/mcore}
+PAI_MEGATRON_PATH=${PAI_MEGATRON_PATH:-/workspace/code/OptiCo/Pai-Megatron-Patch-v0-12-3}
 MEGATRON_PATH=${PAI_MEGATRON_PATH}/backends/megatron/Megatron-LM-core_v0.15.0
 export PYTHONPATH=${PAI_MEGATRON_PATH}:${MEGATRON_PATH}:$PYTHONPATH
 
@@ -102,8 +102,13 @@ SP=true
 DO=true
 FL=true
 TE=true
-DATASET_PATH=/workspace/dataset/qwen_wudao/wudao_qwenbpe_text_document
-PRETRAIN_CHECKPOINT_PATH=/workspace/model/Qwen2.5-0.5B
+DATASET_PATH=${DATASET_PATH:-/workspace/dataset/qwen_wudao/wudao_qwenbpe_text_document}
+# 7B vocab/extra tokens do not match the 0.5B checkpoint dir.
+if [ "${MODEL_SIZE}" = "7B" ]; then
+    PRETRAIN_CHECKPOINT_PATH=${PRETRAIN_CHECKPOINT_PATH:-/workspace/model/Qwen2.5-7B}
+else
+    PRETRAIN_CHECKPOINT_PATH=${PRETRAIN_CHECKPOINT_PATH:-/workspace/model/Qwen2.5-0.5B}
+fi
 TRAIN_ITERS=5
 LR_WARMUP_ITERS=0
 LR_DECAY_ITERS=${TRAIN_ITERS}

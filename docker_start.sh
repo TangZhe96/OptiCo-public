@@ -1,3 +1,4 @@
+#!/bin/bash
 current_date=$(date +%m%d)
 
 sudo docker run --net host --gpus all \

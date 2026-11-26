@@ -11,8 +11,8 @@ export NCCL_BLOCKING_WAIT=0
 export NCCL_TIMEOUT=60000
 export TORCH_DISTRIBUTED_TIMEOUT=60
 
-OUTPUT_BASEPATH=/workspace/code/OptiCo/output/mcore
-PAI_MEGATRON_PATH=/workspace/code/OptiCo/Pai-Megatron-Patch-v0-12-3
+OUTPUT_BASEPATH=${OUTPUT_BASEPATH:-/workspace/code/OptiCo/output/mcore}
+PAI_MEGATRON_PATH=${PAI_MEGATRON_PATH:-/workspace/code/OptiCo/Pai-Megatron-Patch-v0-12-3}
 MEGATRON_PATH=${PAI_MEGATRON_PATH}/backends/megatron/Megatron-LM-core_v0.15.0
 export PYTHONPATH=${PAI_MEGATRON_PATH}:${MEGATRON_PATH}:$PYTHONPATH
 
@@ -106,8 +106,8 @@ EXTRA_VOCAB_SIZE=0
 
 TE=true
 SAVE_INTERVAL=500
-DATASET_PATH=/workspace/dataset/llama2_wudao/wudao_llamabpe_text_document
-TOKENIZER_MODEL_PATH=/workspace/model/llama2-7b-hf/tokenizer.model
+DATASET_PATH=${DATASET_PATH:-/workspace/dataset/llama2_wudao/wudao_llamabpe_text_document}
+TOKENIZER_MODEL_PATH=${TOKENIZER_MODEL_PATH:-/workspace/model/llama2-7b-hf/tokenizer.model}
 TRAIN_ITERS=5
 LR_WARMUP_ITERS=0
 LR_DECAY_ITERS=${TRAIN_ITERS}

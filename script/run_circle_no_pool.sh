@@ -114,15 +114,23 @@ while [ ${iter_cur} -lt ${iter_max} ]; do
     analyze_result_file="${OUTPUT_PATH}/${iter_cur}/analyze_result.txt"
     if [ $RANK = 0 ]; then
         echo "[${iter_cur}] give_sugg and change_para start"
-        eval ${auto_analyze_cmd}
+        if ! eval ${auto_analyze_cmd}; then
+            echo "fail" >> ${analyze_result_file}
+            echo "[${iter_cur}] parameter validation failed. Stop circle."
+            exit 1
+        fi
         echo "[${iter_cur}] give_sugg and change_para finish"
         echo "success" >> ${analyze_result_file}
     else
         while true; do
             if [ -f "$analyze_result_file" ]; then
                 analyze_result=$(cat ${analyze_result_file})
-                if [ $analyze_result = "success" ]; then
+                if [ "$analyze_result" = "success" ]; then
                     break
+                fi
+                if [ "$analyze_result" = "fail" ]; then
+                    echo "[${iter_cur}] parameter validation failed. Stop circle."
+                    exit 1
                 fi
             fi
             sleep 5

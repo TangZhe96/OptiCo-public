@@ -23,4 +23,10 @@ Reference Table:
 Example Response:
 MICRO_BATCH_SIZE:4
 AC:sel
+AC_METHOD:none
+AC_MODULES:core_attn
+CP:1
+SP:true
+DO:true
+TP_COMM_OVERLAP:false
 PP:1
